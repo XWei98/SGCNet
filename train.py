@@ -9,7 +9,6 @@ from networks.vit_seg_modeling import VisionTransformer as ViT_seg
 from networks.vit_seg_modeling import CONFIGS as CONFIGS_ViT_seg
 from trainer import trainer_synapse
 import shutil
-from networks.vmunet import VMUNet
 parser = argparse.ArgumentParser()
 parser.add_argument('--root_path', type=str,
                     default='../data/Synapse/train_npz', help='root dir for data')
@@ -28,7 +27,7 @@ parser.add_argument('--batch_size', type=int,
 parser.add_argument('--n_gpu', type=int, default=1, help='total gpu')
 parser.add_argument('--deterministic', type=int,  default=1,
                     help='whether use deterministic training')
-parser.add_argument('--base_lr', type=float,  default=0.015,
+parser.add_argument('--base_lr', type=float,  default=0.01,
                     help='segmentation network learning rate')
 parser.add_argument('--img_size', type=int,
                     default=448, help='input patch size of network input')
@@ -40,7 +39,6 @@ parser.add_argument('--vit_name', type=str,
                     default='R50-ViT-B_16', help='select one vit model')
 parser.add_argument('--vit_patches_size', type=int,
                     default=16, help='vit_patches_size, default is 16')
-
 args = parser.parse_args()
 
 
@@ -59,8 +57,8 @@ if __name__ == "__main__":
     dataset_name = args.dataset
     dataset_config = {
         'Synapse': {
-            'root_path': '/data1/Code/zhaoxiaowei/VM-UNet/data/Synapse/train_npz',
-            'list_dir': '/data1/Code/zhaoxiaowei/VM-UNet/data/Synapse/lists/lists_Synapse',
+            'root_path': '/data/Synapse/train_npz',
+            'list_dir': '/Synapse/lists/lists_Synapse',
             'num_classes': 9,
         },
     }
@@ -69,7 +67,7 @@ if __name__ == "__main__":
     args.list_dir = dataset_config[dataset_name]['list_dir']
     args.is_pretrain = True
     args.exp = 'TU_' + dataset_name + str(args.img_size)
-    snapshot_path = "./result_83.60_lr/0.015/{}/{}".format(args.exp, 'TU')
+    snapshot_path = "./result_SAM/{}/{}".format(args.exp, 'TU')
     snapshot_path = snapshot_path + '_pretrain' if args.is_pretrain else snapshot_path
     snapshot_path += '_' + args.vit_name
     snapshot_path = snapshot_path + '_skip' + str(args.n_skip)
@@ -88,23 +86,23 @@ if __name__ == "__main__":
     config_vit.n_skip = args.n_skip
     if args.vit_name.find('R50') != -1:
         config_vit.patches.grid = (int(args.img_size / args.vit_patches_size), int(args.img_size / args.vit_patches_size))
-    net = VMUNet(  # 10
-                num_classes=9,
-                input_channels=3,
-                depths=[2, 2, 9, 2],
-                depths_decoder=[2, 9, 2, 2],
-                drop_path_rate=0.2,
-                load_ckpt_path="/home/zhaoxiaowei/vssmsmall_dp03_ckpt_epoch_238.pth"
-            ).cuda()
-    net.load_from()
+    net = ViT_seg(config_vit, img_size=448, num_classes=config_vit.n_classes).cuda()
+    net.load_from(weights=np.load(config_vit.pretrained_path))
+    sam_path = "/checkpoint/sam/sam_vit_b_01ec64.pth"
 
-    suou_vit_seg_modeling = "/data1/Code/zhaoxiaowei/TransUNet-main/networks/vmamba.py"
-    destination_vit_seg_modeling = os.path.join(snapshot_path, 'vmamba.py')
+    sam_state_dict = torch.load(sam_path)
+    print(sam_path)
+    net.sam_encoder_output.load_state_dict(sam_state_dict, strict=False)
+    net.maskdecoder.load_state_dict(sam_state_dict, strict=False)
+
+
+    suou_vit_seg_modeling = "/TransUNet-main/networks/vit_seg_modeling.py"
+    destination_vit_seg_modeling = os.path.join(snapshot_path, 'vit_seg_modeling.py')
     if not os.path.exists(destination_vit_seg_modeling):
         shutil.copy2(suou_vit_seg_modeling, destination_vit_seg_modeling)
 
-    suou_train = "/data1/Code/zhaoxiaowei/TransUNet-main/train.py"
-    source_trainer = '/data1/Code/zhaoxiaowei/TransUNet-main/trainer.py'
+    suou_train = "/TransUNet-main/train.py"
+    source_trainer = '/TransUNet-main/trainer.py'
     destination_trainer = os.path.join(snapshot_path, 'trainer.py')
     destination_train = os.path.join(snapshot_path, 'train.py')
     if not os.path.exists(destination_trainer):
